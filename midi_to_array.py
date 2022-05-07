@@ -1,4 +1,4 @@
-from mido import MidiFile, MidiTrack, Message
+from mido import MidiFile, MidiTrack, Message, MetaMessage, bpm2tempo
 import click
 
 class MusicMapping:
@@ -117,10 +117,13 @@ def midi_2_array(input, output, format):
     for i, track in enumerate(mid.tracks):
         channels = [Channel() for k in range(16)]
         global_time = 0
+        tempo = None
 
         for msg in track:
             global_time += msg.time
 
+            if tempo == None and msg.is_meta and msg.type == 'set_tempo':
+                tempo = msg.tempo
             if not msg.is_meta:
                 if msg.type == 'note_on' and msg.velocity > 0:
                     cid = msg.channel
@@ -138,9 +141,9 @@ def midi_2_array(input, output, format):
         for j, channel in enumerate(channels):
             channel.flush()
             if len(channel) > 1:
-                output_array(channel, output, f'-track-{i}-channel{j}', format, ticks_per_whole_note)
+                output_array(channel, output, f'-track-{i}-channel{j}', format, ticks_per_whole_note, tempo)
     
-def output_array(channel: Channel, dst, suffix, format, ticks_per_whole_note):
+def output_array(channel: Channel, dst, suffix, format, ticks_per_whole_note, tempo):
     result = ''
     if format == 'integer':
         result += ' '.join([str(p) for p in channel.pitch])
@@ -149,6 +152,9 @@ def output_array(channel: Channel, dst, suffix, format, ticks_per_whole_note):
     result += '\n'
     result += ' '.join([str(d / ticks_per_whole_note) for d in channel.duration])
     result += '\n'
+    if tempo != None:
+        result += str(tempo)
+
     if dst == None:
         print('------ ' + suffix)
         print(result)
@@ -167,17 +173,22 @@ def process_array_input(pitches, duration, format, ticks_per_whole_note):
     duration = [round(float(d) * ticks_per_whole_note) for d in duration]
     return [Note(p, t) for p, t in zip(pitches, duration)]
 
-def array_to_midi(input, output, format):
+def array_to_midi(input, output, format, bpm):
     mid = MidiFile()
     track = MidiTrack()
     mid.tracks.append(track)
     ticks_per_whole_note = mid.ticks_per_beat * 4
-    # ticks_per_whole_note = 1
 
     with open(input, 'r') as fin:
         pitches = fin.readline().split()
         duration = fin.readline().split()
         notes = process_array_input(pitches, duration, format, ticks_per_whole_note)
+        tempo = fin.readline().strip()
+
+    if bpm != None:
+        track.append(MetaMessage(type='set_tempo', tempo=bpm2tempo(bpm)))
+    elif tempo:
+        track.append(MetaMessage(type='set_tempo', tempo = int(tempo)))
 
     rest_time = 0
     for note in notes:
@@ -199,11 +210,12 @@ def array_to_midi(input, output, format):
 @click.option('--output', default=None, help='output file, console by default')
 @click.option('--format', type=click.Choice(['name', 'integer'], case_sensitive=False),
                 help="pitch format", default='name')
-def convert(input, output, format):
+@click.option('--bpm', type=float, default=None, help='beats per minute')
+def convert(input, output, format, bpm):
     if input.endswith('.mid') or input.endswith('.midi') or input.endswith('.MID') or input.endswith('.MIDI'):
         midi_2_array(input, output, format)
     else:
-        array_to_midi(input, output, format)
+        array_to_midi(input, output, format, bpm)
 
 if __name__ == '__main__':
     convert()
