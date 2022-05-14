@@ -109,15 +109,16 @@ class Channel:
         self.prev_time = self.cur_time
     
 
-def midi_2_array(input, output, format):
+def midi_2_array(input, output, format, no_rest):
     mid = MidiFile(input)
     ticks_per_whole_note = mid.ticks_per_beat * 4
     # ticks_per_whole_note = 1
+    tempo = None
+    file_names = []
 
     for i, track in enumerate(mid.tracks):
         channels = [Channel() for k in range(16)]
         global_time = 0
-        tempo = None
 
         for msg in track:
             global_time += msg.time
@@ -140,8 +141,27 @@ def midi_2_array(input, output, format):
 
         for j, channel in enumerate(channels):
             channel.flush()
+
+            # remove rest
+            if no_rest:
+                pitch_res = []
+                dura_res = []
+                rest_len = 0
+                while channel.pitch:
+                    p = channel.pitch.pop()
+                    d = channel.duration.pop()
+                    if p == -1:
+                        rest_len += d
+                    else:
+                        pitch_res.insert(0, p)
+                        dura_res.insert(0, d + rest_len)
+                        rest_len = 0
+                channel.pitch = pitch_res
+                channel.duration = dura_res
+
             if len(channel) > 1:
-                output_array(channel, output, f'-track-{i}-channel{j}', format, ticks_per_whole_note, tempo)
+                file_names.append(output_array(channel, output, f'-track-{i}-channel{j}', format, ticks_per_whole_note, tempo))
+    return file_names
     
 def output_array(channel: Channel, dst, suffix, format, ticks_per_whole_note, tempo):
     result = ''
@@ -155,12 +175,10 @@ def output_array(channel: Channel, dst, suffix, format, ticks_per_whole_note, te
     if tempo != None:
         result += str(tempo)
 
-    if dst == None:
-        print('------ ' + suffix)
-        print(result)
-    else:
-        with open(dst + suffix, 'w', encoding='utf-8') as fout:
-            fout.write(result)
+    with open(dst + suffix, 'w', encoding='utf-8') as fout:
+        fout.write(result)
+    
+    return dst + suffix
 
 def process_array_input(pitches, duration, format, ticks_per_whole_note):
     '''
@@ -206,14 +224,17 @@ def array_to_midi(input, output, format, bpm):
     mid.save(output)
 
 @click.command()
-@click.option('--input', help='input file')
-@click.option('--output', default=None, help='output file, console by default')
+@click.option('--input', required=True, help='input file')
+@click.option('--output', required=True, help='output file')
 @click.option('--format', type=click.Choice(['name', 'integer'], case_sensitive=False),
-                help="pitch format", default='name')
+                help="pitch format, note name (such as C4 D#5 Eb6) or integer (60 is C4)", default='name')
 @click.option('--bpm', type=float, default=None, help='beats per minute')
-def convert(input, output, format, bpm):
+@click.option('--no-rest', is_flag=True, default=False, help='If set, rests are removed by prolonging the previous note')
+def convert(input, output, format, bpm, no_rest):
     if input.endswith('.mid') or input.endswith('.midi') or input.endswith('.MID') or input.endswith('.MIDI'):
-        midi_2_array(input, output, format)
+        file_names = midi_2_array(input, output, format, no_rest)
+        for file_name in file_names:
+            array_to_midi(file_name, file_name + '.mid', format, bpm)
     else:
         array_to_midi(input, output, format, bpm)
 

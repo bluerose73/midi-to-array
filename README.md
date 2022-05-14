@@ -40,6 +40,9 @@ Line 1: pitch array. R stands for rest.
 R R C3 R G#2 R G#2 R G2 R G2 R ...
 ```
 
+If ``--format integer`` is set, pitches are represented by integers, where 60 stands for C4.
+If ``--no-rest`` is set, rests are removed by prolonging the previous note.
+
 Line 2: duration array. The numbers are lengths relative to a whole note.
 
 ```
@@ -51,6 +54,4 @@ Line 3 (optional): tempo in microseconds per beat.
 ```
 500000
 ```
-
-If ``--format integer`` is set, pitches are represented by integers, where 60 stands for C4.
 
